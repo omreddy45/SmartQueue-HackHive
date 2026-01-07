@@ -1,8 +1,9 @@
-import { Token, OrderStatus, QueueStats, MenuItem, Canteen } from '../types';
+import { Token, OrderStatus, QueueStats, MenuItem, Canteen, UserRole } from '../types';
+import { db } from './firebaseConfig';
+import { ref, set, push, onValue, update, get, child } from 'firebase/database';
 
-// Keys for local storage
+// Keys for local storage (kept for caching/synchronous reads)
 const STORAGE_KEY_TOKENS = 'smartqueue_tokens';
-const STORAGE_KEY_COUPONS = 'smartqueue_coupons';
 const STORAGE_KEY_CANTEENS = 'smartqueue_canteens';
 const STORAGE_KEY_HISTORY = 'smartqueue_history';
 
@@ -19,6 +20,33 @@ const generateTokenNumber = (currentCount: number) => {
 const notifyChange = () => {
   window.dispatchEvent(new Event('smartqueue-update'));
 };
+
+// --- Firebase Sync Logic ---
+const syncRef = (path: string, storageKey: string) => {
+  const dbRef = ref(db, path);
+  onValue(dbRef, (snapshot) => {
+    const data = snapshot.val();
+    // Firebase returns objects for lists usually, need to convert to array if needed
+    let parsedData: any[] = [];
+    if (data) {
+      if (Array.isArray(data)) {
+        parsedData = data.filter(Boolean); // remove empty checks
+      } else {
+        parsedData = Object.values(data);
+      }
+    }
+    localStorage.setItem(storageKey, JSON.stringify(parsedData));
+    notifyChange();
+  });
+};
+
+// Initialize Sync
+// We only sync if we are in a browser environment to avoid build errors
+if (typeof window !== 'undefined') {
+  syncRef('canteens', STORAGE_KEY_CANTEENS);
+  syncRef('tokens', STORAGE_KEY_TOKENS);
+  syncRef('history', STORAGE_KEY_HISTORY);
+}
 
 export const MENU_ITEMS: MenuItem[] = [
   {
@@ -72,8 +100,6 @@ export const BackendService = {
   // --- Canteen Management ---
 
   registerCanteen: async (name: string, campus: string): Promise<Canteen> => {
-    const canteens: Canteen[] = JSON.parse(localStorage.getItem(STORAGE_KEY_CANTEENS) || '[]');
-
     // Assign a random gradient theme
     const themes = [
       'from-blue-500 to-indigo-600',
@@ -91,21 +117,16 @@ export const BackendService = {
       themeColor: randomTheme
     };
 
-    canteens.push(newCanteen);
-    localStorage.setItem(STORAGE_KEY_CANTEENS, JSON.stringify(canteens));
+    // Write to Firebase
+    // We use the ID as the key to prevent array index issues
+    await set(ref(db, `canteens/${newCanteen.id}`), newCanteen);
+
     return newCanteen;
   },
 
   // Save a canteen directly (e.g. from QR scan)
-  saveCanteen: (canteen: Canteen): void => {
-    const canteens: Canteen[] = JSON.parse(localStorage.getItem(STORAGE_KEY_CANTEENS) || '[]');
-    const exists = canteens.findIndex(c => c.id === canteen.id);
-    if (exists === -1) {
-      canteens.push(canteen);
-    } else {
-      canteens[exists] = canteen;
-    }
-    localStorage.setItem(STORAGE_KEY_CANTEENS, JSON.stringify(canteens));
+  saveCanteen: async (canteen: Canteen): Promise<void> => {
+    await set(ref(db, `canteens/${canteen.id}`), canteen);
   },
 
   getCanteen: (id: string): Canteen | undefined => {
@@ -120,20 +141,18 @@ export const BackendService = {
   // --- Student Methods ---
 
   createToken: async (canteenId: string, couponCode: string, foodItem: string): Promise<Token> => {
-    // In the new flow, couponCode is effectively the "Ticket ID" or "User Device ID"
-    // We remove the strict coupon one-time-use check to allow easier flow testing, 
-    // or we assume a new code is generated per order.
+    // We need to fetch current tokens from Firebase (or use local cache) to count them for the number
+    // To be safe against race conditions, we should use a transaction, but for this scale, reading local is acceptable trade-off
+    // or better: just use a timestamp-based ID or random ID. The "token number" A-001 is cosmetic.
 
     const tokens: Token[] = JSON.parse(localStorage.getItem(STORAGE_KEY_TOKENS) || '[]');
     const today = new Date().setHours(0, 0, 0, 0);
-
-    // Filter tokens for THIS canteen and TODAY to generate sequential number
     const canteenTodayTokens = tokens.filter(t => t.canteenId === canteenId && t.timestamp >= today);
 
     const newToken: Token = {
       id: generateId(),
       canteenId,
-      couponCode, // This can be treated as a User ID or Order Hash
+      couponCode,
       tokenNumber: generateTokenNumber(canteenTodayTokens.length),
       foodItem,
       status: OrderStatus.WAITING,
@@ -141,10 +160,7 @@ export const BackendService = {
       estimatedWaitTimeMinutes: 5,
     };
 
-    tokens.push(newToken);
-    localStorage.setItem(STORAGE_KEY_TOKENS, JSON.stringify(tokens));
-    notifyChange();
-
+    await set(ref(db, `tokens/${newToken.id}`), newToken);
     return newToken;
   },
 
@@ -155,7 +171,6 @@ export const BackendService = {
 
   getQueuePosition: async (canteenId: string, tokenId: string): Promise<number> => {
     const tokens: Token[] = JSON.parse(localStorage.getItem(STORAGE_KEY_TOKENS) || '[]');
-    // Filter by canteen
     const activeTokens = tokens.filter(t => t.canteenId === canteenId && t.status === OrderStatus.WAITING);
     const index = activeTokens.findIndex(t => t.id === tokenId);
     return index === -1 ? 0 : index + 1;
@@ -172,24 +187,14 @@ export const BackendService = {
   },
 
   markOrderReady: async (tokenId: string): Promise<void> => {
-    const tokens: Token[] = JSON.parse(localStorage.getItem(STORAGE_KEY_TOKENS) || '[]');
-    const index = tokens.findIndex(t => t.id === tokenId);
-    if (index !== -1) {
-      tokens[index].status = OrderStatus.READY;
-      localStorage.setItem(STORAGE_KEY_TOKENS, JSON.stringify(tokens));
-      notifyChange();
-    }
+    await update(ref(db, `tokens/${tokenId}`), { status: OrderStatus.READY });
   },
 
   completeOrder: async (tokenId: string): Promise<void> => {
-    const tokens: Token[] = JSON.parse(localStorage.getItem(STORAGE_KEY_TOKENS) || '[]');
-    const index = tokens.findIndex(t => t.id === tokenId);
-    if (index !== -1) {
-      tokens[index].status = OrderStatus.COMPLETED;
-      tokens[index].completedAt = Date.now();
-      localStorage.setItem(STORAGE_KEY_TOKENS, JSON.stringify(tokens));
-      notifyChange();
-    }
+    await update(ref(db, `tokens/${tokenId}`), {
+      status: OrderStatus.COMPLETED,
+      completedAt: Date.now()
+    });
   },
 
   // --- Admin Methods ---
@@ -197,7 +202,6 @@ export const BackendService = {
   getStats: async (canteenId: string): Promise<QueueStats> => {
     const tokens: Token[] = JSON.parse(localStorage.getItem(STORAGE_KEY_TOKENS) || '[]');
 
-    // Filter specifically for this canteen
     const canteenTokens = tokens.filter(t => t.canteenId === canteenId);
     const activeTokens = canteenTokens.filter(t => t.status === OrderStatus.WAITING);
     const completedTokens = canteenTokens.filter(t => t.status === OrderStatus.COMPLETED && t.completedAt);
@@ -214,7 +218,7 @@ export const BackendService = {
     return {
       totalOrdersToday: canteenTokens.length,
       averageWaitTime: Math.round(averageWaitTimeMs / 60000),
-      peakHour: '12:00 PM - 1:00 PM',
+      peakHour: '12:00 PM - 1:00 PM', // Placeholder logic remains
       activeQueueLength: activeTokens.length,
     };
   },
@@ -225,7 +229,6 @@ export const BackendService = {
     today.setHours(0, 0, 0, 0);
     const todayMs = today.getTime();
 
-    // Filter by Canteen ID AND Today
     const todayTokens = tokens.filter(t => t.canteenId === canteenId && t.timestamp >= todayMs);
 
     const trafficMap: Record<number, number> = {};
@@ -251,69 +254,51 @@ export const BackendService = {
   },
 
   updateTokenEstimation: async (tokenId: string, minutes: number, reasoning?: string) => {
-    const tokens: Token[] = JSON.parse(localStorage.getItem(STORAGE_KEY_TOKENS) || '[]');
-    const index = tokens.findIndex(t => t.id === tokenId);
-    if (index !== -1) {
-      tokens[index].estimatedWaitTimeMinutes = minutes;
-      if (reasoning) tokens[index].aiReasoning = reasoning;
-      localStorage.setItem(STORAGE_KEY_TOKENS, JSON.stringify(tokens));
-      notifyChange();
-    }
+    const updates: any = { estimatedWaitTimeMinutes: minutes };
+    if (reasoning) updates.aiReasoning = reasoning;
+    await update(ref(db, `tokens/${tokenId}`), updates);
   },
 
-  /**
-   * Records historical order data for ETA predictions
-   */
   recordOrderHistory: async (tokenId: string, foodItem: string, prepTimeMinutes: number, hour: number) => {
-    const history: any[] = JSON.parse(localStorage.getItem(STORAGE_KEY_HISTORY) || '[]');
-    history.push({
+    const newEntry = {
       id: generateId(),
       foodItem,
       prepTimeMinutes,
       hour,
       timestamp: Date.now()
-    });
-    // Keep only last 1000 records for performance
-    if (history.length > 1000) history.shift();
-    localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(history));
+    };
+    await push(ref(db, 'history'), newEntry);
   },
 
-  /**
-   * Get historical data for a specific food item
-   */
   getHistoricalDataForFood: async (foodItem: string): Promise<any[]> => {
     const history: any[] = JSON.parse(localStorage.getItem(STORAGE_KEY_HISTORY) || '[]');
     return history.filter(h => h.foodItem === foodItem);
   },
 
-  /**
-   * Get all historical data for analysis
-   */
   getAllHistoricalData: async (): Promise<any[]> => {
     return JSON.parse(localStorage.getItem(STORAGE_KEY_HISTORY) || '[]');
   },
 
-  /**
-   * Complete order with AI-driven reasoning
-   */
   completeOrderWithAI: async (tokenId: string, aiReasoning?: string): Promise<void> => {
+    // Get current token data to calculate prep time
+    // Since this is called from UI, we assume data is in local cache 
+    // but to be robust we could fetch. For now, rely on cache.
     const tokens: Token[] = JSON.parse(localStorage.getItem(STORAGE_KEY_TOKENS) || '[]');
-    const index = tokens.findIndex(t => t.id === tokenId);
-    if (index !== -1) {
-      tokens[index].status = OrderStatus.COMPLETED;
-      tokens[index].completedAt = Date.now();
-      if (aiReasoning) tokens[index].aiReasoning = aiReasoning;
-      localStorage.setItem(STORAGE_KEY_TOKENS, JSON.stringify(tokens));
+    const token = tokens.find(t => t.id === tokenId);
 
-      // Record in history for future predictions
-      const token = tokens[index];
-      if (token.completedAt && token.timestamp) {
-        const prepTimeMinutes = Math.round((token.completedAt - token.timestamp) / 60000);
-        const hour = new Date(token.timestamp).getHours();
-        await BackendService.recordOrderHistory(tokenId, token.foodItem, prepTimeMinutes, hour);
-      }
+    const updates: any = {
+      status: OrderStatus.COMPLETED,
+      completedAt: Date.now()
+    };
+    if (aiReasoning) updates.aiReasoning = aiReasoning;
 
-      notifyChange();
+    await update(ref(db, `tokens/${tokenId}`), updates);
+
+    // Record History
+    if (token && token.timestamp) {
+      const prepTimeMinutes = Math.round((Date.now() - token.timestamp) / 60000);
+      const hour = new Date(token.timestamp).getHours();
+      await BackendService.recordOrderHistory(tokenId, token.foodItem, prepTimeMinutes, hour);
     }
   }
 };
