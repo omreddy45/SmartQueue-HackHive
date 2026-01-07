@@ -21,79 +21,91 @@ const notifyChange = () => {
 };
 
 export const MENU_ITEMS: MenuItem[] = [
-  { 
-    id: 'vadapav', 
-    name: 'Vada Pav', 
-    icon: 'pizza', 
+  {
+    id: 'vadapav',
+    name: 'Vada Pav',
+    icon: 'pizza',
     color: 'bg-orange-100 text-orange-700'
   },
-  { 
-    id: 'alooparatha', 
-    name: 'Aloo Paratha', 
-    icon: 'utensils', 
+  {
+    id: 'alooparatha',
+    name: 'Aloo Paratha',
+    icon: 'utensils',
     color: 'bg-yellow-100 text-yellow-700'
   },
-  { 
-    id: 'samosa', 
-    name: 'Samosa', 
-    icon: 'pizza', 
+  {
+    id: 'samosa',
+    name: 'Samosa',
+    icon: 'pizza',
     color: 'bg-amber-100 text-amber-700'
   },
-  { 
-    id: 'masaladosa', 
-    name: 'Masala Dosa', 
-    icon: 'utensils', 
+  {
+    id: 'masaladosa',
+    name: 'Masala Dosa',
+    icon: 'utensils',
     color: 'bg-orange-50 text-orange-800'
   },
-  { 
-    id: 'cholebhature', 
-    name: 'Chole Bhature', 
-    icon: 'utensils', 
+  {
+    id: 'cholebhature',
+    name: 'Chole Bhature',
+    icon: 'utensils',
     color: 'bg-red-50 text-red-800'
   },
-  { 
-    id: 'sandwich', 
-    name: 'Veg Sandwich', 
-    icon: 'sandwich', 
+  {
+    id: 'sandwich',
+    name: 'Veg Sandwich',
+    icon: 'sandwich',
     color: 'bg-green-100 text-green-700'
   },
-  { 
-    id: 'coffee', 
-    name: 'Cold Coffee', 
-    icon: 'coffee', 
+  {
+    id: 'coffee',
+    name: 'Cold Coffee',
+    icon: 'coffee',
     color: 'bg-stone-100 text-stone-700'
   },
 ];
 
 export const BackendService = {
-  
+
   MENU_ITEMS,
 
   // --- Canteen Management ---
 
   registerCanteen: async (name: string, campus: string): Promise<Canteen> => {
     const canteens: Canteen[] = JSON.parse(localStorage.getItem(STORAGE_KEY_CANTEENS) || '[]');
-    
+
     // Assign a random gradient theme
     const themes = [
-        'from-blue-500 to-indigo-600',
-        'from-amber-600 to-orange-600',
-        'from-red-500 to-pink-600', 
-        'from-green-500 to-emerald-600',
-        'from-purple-500 to-violet-600'
+      'from-blue-500 to-indigo-600',
+      'from-amber-600 to-orange-600',
+      'from-red-500 to-pink-600',
+      'from-green-500 to-emerald-600',
+      'from-purple-500 to-violet-600'
     ];
     const randomTheme = themes[Math.floor(Math.random() * themes.length)];
 
     const newCanteen: Canteen = {
-        id: generateId(),
-        name,
-        campus,
-        themeColor: randomTheme
+      id: generateId(),
+      name,
+      campus,
+      themeColor: randomTheme
     };
 
     canteens.push(newCanteen);
     localStorage.setItem(STORAGE_KEY_CANTEENS, JSON.stringify(canteens));
     return newCanteen;
+  },
+
+  // Save a canteen directly (e.g. from QR scan)
+  saveCanteen: (canteen: Canteen): void => {
+    const canteens: Canteen[] = JSON.parse(localStorage.getItem(STORAGE_KEY_CANTEENS) || '[]');
+    const exists = canteens.findIndex(c => c.id === canteen.id);
+    if (exists === -1) {
+      canteens.push(canteen);
+    } else {
+      canteens[exists] = canteen;
+    }
+    localStorage.setItem(STORAGE_KEY_CANTEENS, JSON.stringify(canteens));
   },
 
   getCanteen: (id: string): Canteen | undefined => {
@@ -102,7 +114,7 @@ export const BackendService = {
   },
 
   getAllCanteens: (): Canteen[] => {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY_CANTEENS) || '[]');
+    return JSON.parse(localStorage.getItem(STORAGE_KEY_CANTEENS) || '[]');
   },
 
   // --- Student Methods ---
@@ -111,13 +123,13 @@ export const BackendService = {
     // In the new flow, couponCode is effectively the "Ticket ID" or "User Device ID"
     // We remove the strict coupon one-time-use check to allow easier flow testing, 
     // or we assume a new code is generated per order.
-    
+
     const tokens: Token[] = JSON.parse(localStorage.getItem(STORAGE_KEY_TOKENS) || '[]');
     const today = new Date().setHours(0, 0, 0, 0);
-    
+
     // Filter tokens for THIS canteen and TODAY to generate sequential number
     const canteenTodayTokens = tokens.filter(t => t.canteenId === canteenId && t.timestamp >= today);
-    
+
     const newToken: Token = {
       id: generateId(),
       canteenId,
@@ -153,9 +165,9 @@ export const BackendService = {
 
   getActiveQueue: async (canteenId: string): Promise<Token[]> => {
     const tokens: Token[] = JSON.parse(localStorage.getItem(STORAGE_KEY_TOKENS) || '[]');
-    return tokens.filter(t => 
-        t.canteenId === canteenId && 
-        (t.status === OrderStatus.WAITING || t.status === OrderStatus.READY)
+    return tokens.filter(t =>
+      t.canteenId === canteenId &&
+      (t.status === OrderStatus.WAITING || t.status === OrderStatus.READY)
     );
   },
 
@@ -184,21 +196,21 @@ export const BackendService = {
 
   getStats: async (canteenId: string): Promise<QueueStats> => {
     const tokens: Token[] = JSON.parse(localStorage.getItem(STORAGE_KEY_TOKENS) || '[]');
-    
+
     // Filter specifically for this canteen
     const canteenTokens = tokens.filter(t => t.canteenId === canteenId);
     const activeTokens = canteenTokens.filter(t => t.status === OrderStatus.WAITING);
     const completedTokens = canteenTokens.filter(t => t.status === OrderStatus.COMPLETED && t.completedAt);
-    
+
     let totalWaitTime = 0;
     completedTokens.forEach(t => {
-        if (t.completedAt) {
-            totalWaitTime += (t.completedAt - t.timestamp);
-        }
+      if (t.completedAt) {
+        totalWaitTime += (t.completedAt - t.timestamp);
+      }
     });
-    
+
     const averageWaitTimeMs = completedTokens.length > 0 ? totalWaitTime / completedTokens.length : 0;
-    
+
     return {
       totalOrdersToday: canteenTokens.length,
       averageWaitTime: Math.round(averageWaitTimeMs / 60000),
@@ -207,46 +219,46 @@ export const BackendService = {
     };
   },
 
-  getHourlyTraffic: async (canteenId: string): Promise<{name: string, orders: number}[]> => {
+  getHourlyTraffic: async (canteenId: string): Promise<{ name: string, orders: number }[]> => {
     const tokens: Token[] = JSON.parse(localStorage.getItem(STORAGE_KEY_TOKENS) || '[]');
     const today = new Date();
-    today.setHours(0,0,0,0);
+    today.setHours(0, 0, 0, 0);
     const todayMs = today.getTime();
-    
+
     // Filter by Canteen ID AND Today
     const todayTokens = tokens.filter(t => t.canteenId === canteenId && t.timestamp >= todayMs);
-    
+
     const trafficMap: Record<number, number> = {};
     todayTokens.forEach(t => {
-        const h = new Date(t.timestamp).getHours();
-        trafficMap[h] = (trafficMap[h] || 0) + 1;
+      const h = new Date(t.timestamp).getHours();
+      trafficMap[h] = (trafficMap[h] || 0) + 1;
     });
 
     const hours = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
     Object.keys(trafficMap).forEach(k => {
-        if(!hours.includes(Number(k))) hours.push(Number(k));
+      if (!hours.includes(Number(k))) hours.push(Number(k));
     });
-    hours.sort((a,b) => a - b);
+    hours.sort((a, b) => a - b);
 
     return hours.map(h => {
-        const ampm = h >= 12 ? 'PM' : 'AM';
-        const displayH = h % 12 || 12;
-        return {
-            name: `${displayH} ${ampm}`,
-            orders: trafficMap[h] || 0
-        };
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const displayH = h % 12 || 12;
+      return {
+        name: `${displayH} ${ampm}`,
+        orders: trafficMap[h] || 0
+      };
     });
   },
 
   updateTokenEstimation: async (tokenId: string, minutes: number, reasoning?: string) => {
-      const tokens: Token[] = JSON.parse(localStorage.getItem(STORAGE_KEY_TOKENS) || '[]');
-      const index = tokens.findIndex(t => t.id === tokenId);
-      if (index !== -1) {
-        tokens[index].estimatedWaitTimeMinutes = minutes;
-        if(reasoning) tokens[index].aiReasoning = reasoning;
-        localStorage.setItem(STORAGE_KEY_TOKENS, JSON.stringify(tokens));
-        notifyChange();
-      }
+    const tokens: Token[] = JSON.parse(localStorage.getItem(STORAGE_KEY_TOKENS) || '[]');
+    const index = tokens.findIndex(t => t.id === tokenId);
+    if (index !== -1) {
+      tokens[index].estimatedWaitTimeMinutes = minutes;
+      if (reasoning) tokens[index].aiReasoning = reasoning;
+      localStorage.setItem(STORAGE_KEY_TOKENS, JSON.stringify(tokens));
+      notifyChange();
+    }
   },
 
   /**
@@ -292,7 +304,7 @@ export const BackendService = {
       tokens[index].completedAt = Date.now();
       if (aiReasoning) tokens[index].aiReasoning = aiReasoning;
       localStorage.setItem(STORAGE_KEY_TOKENS, JSON.stringify(tokens));
-      
+
       // Record in history for future predictions
       const token = tokens[index];
       if (token.completedAt && token.timestamp) {
@@ -300,7 +312,7 @@ export const BackendService = {
         const hour = new Date(token.timestamp).getHours();
         await BackendService.recordOrderHistory(tokenId, token.foodItem, prepTimeMinutes, hour);
       }
-      
+
       notifyChange();
     }
   }
