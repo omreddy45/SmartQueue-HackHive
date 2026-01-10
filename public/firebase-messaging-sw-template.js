@@ -2,13 +2,13 @@ importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js'
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
 
 const firebaseConfig = {
-    apiKey: "AIzaSyCUXLjQds6_O5J90wu7e832sO2GZnsBJOo",
-    authDomain: "smart-queue-website.firebaseapp.com",
-    projectId: "smart-queue-website",
-    storageBucket: "smart-queue-website.firebasestorage.app",
-    messagingSenderId: "875617201209",
-    appId: "1:875617201209:web:2b76d5f9282da54a7b31e8",
-    measurementId: "G-MEASUREMENT_ID"
+    apiKey: "{{VITE_FIREBASE_API_KEY}}",
+    authDomain: "{{VITE_FIREBASE_AUTH_DOMAIN}}",
+    databaseURL: "{{VITE_FIREBASE_DATABASE_URL}}",
+    projectId: "{{VITE_FIREBASE_PROJECT_ID}}",
+    storageBucket: "{{VITE_FIREBASE_STORAGE_BUCKET}}",
+    messagingSenderId: "{{VITE_FIREBASE_MESSAGING_SENDER_ID}}",
+    appId: "{{VITE_FIREBASE_APP_ID}}"
 };
 
 firebase.initializeApp(firebaseConfig);
