@@ -23,6 +23,7 @@ export interface Token {
   estimatedWaitTimeMinutes: number;
   aiReasoning?: string; // New field for AI explanation
   completedAt?: number;
+  fcmToken?: string; // FCM Token for push notifications
 }
 
 export interface QueueStats {

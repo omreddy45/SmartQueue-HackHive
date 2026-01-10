@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BackendService, MENU_ITEMS } from '../services/mockBackend';
 import { GeminiService } from '../services/geminiService';
+import { requestNotificationPermission } from '../services/notification';
 import { Token, OrderStatus, Canteen } from '../types';
 import { Button } from './ui/Button';
 import { QrCode, Clock, Users, ArrowRight, RefreshCw, AlertCircle, Utensils, Coffee, Sandwich, Pizza, Sparkles, Check, MapPin, ScanLine, Camera } from 'lucide-react';
@@ -209,7 +210,15 @@ export const StudentView: React.FC<StudentViewProps> = ({ canteen: initialCantee
       // Simulate network/processing delay of scan
       await new Promise(r => setTimeout(r, 1000));
 
-      const newToken = await BackendService.createToken(canteenId, ticketHash, selectedFood);
+      // Request Notification Permission (if supported)
+      let fcmToken = null;
+      try {
+        fcmToken = await requestNotificationPermission();
+      } catch (e) {
+        console.warn('Failed to get FCM token', e);
+      }
+
+      const newToken = await BackendService.createToken(canteenId, ticketHash, selectedFood, fcmToken);
       setToken(newToken);
       const pos = await BackendService.getQueuePosition(canteenId, newToken.id);
       setQueuePosition(pos);

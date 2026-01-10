@@ -140,7 +140,7 @@ export const BackendService = {
 
   // --- Student Methods ---
 
-  createToken: async (canteenId: string, couponCode: string, foodItem: string): Promise<Token> => {
+  createToken: async (canteenId: string, couponCode: string, foodItem: string, fcmToken?: string | null): Promise<Token> => {
     // We need to fetch current tokens from Firebase (or use local cache) to count them for the number
     // To be safe against race conditions, we should use a transaction, but for this scale, reading local is acceptable trade-off
     // or better: just use a timestamp-based ID or random ID. The "token number" A-001 is cosmetic.
@@ -158,6 +158,7 @@ export const BackendService = {
       status: OrderStatus.WAITING,
       timestamp: Date.now(),
       estimatedWaitTimeMinutes: 5,
+      fcmToken: fcmToken || undefined
     };
 
     await set(ref(db, `tokens/${newToken.id}`), newToken);
